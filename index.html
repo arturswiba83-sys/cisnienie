@@ -1,0 +1,259 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dziennik ciśnienia</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg">
+<link rel="apple-touch-icon" href="icon.svg">
+<meta name="theme-color" content="#2563eb">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<style>
+:root{--bg:#f5f6f8;--card:#fff;--tx:#1d2433;--mut:#6b7385;--bd:#dde1e8;--ac:#2563eb;--ok:#16a34a;--warn:#d97706;--bad:#dc2626}
+@media(prefers-color-scheme:dark){:root{--bg:#12151b;--card:#1b2029;--tx:#e8ebf1;--mut:#8f98ab;--bd:#2c3340;--ac:#5b8cff}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font:16px system-ui,sans-serif}
+main{max-width:860px;margin:0 auto;padding:16px}
+h1{font-size:1.4rem;margin:8px 0 16px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:16px;margin-bottom:16px}
+form{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px;align-items:end}
+label{display:flex;flex-direction:column;font-size:.8rem;color:var(--mut);gap:4px}
+input,select{font:inherit;padding:10px;border:1px solid var(--bd);border-radius:8px;background:var(--bg);color:var(--tx)}
+.big input{font-size:1.4rem;text-align:center}
+button{font:inherit;padding:10px 14px;border:0;border-radius:8px;background:var(--ac);color:#fff;cursor:pointer}
+button.sec{background:transparent;color:var(--tx);border:1px solid var(--bd)}
+button.del{background:transparent;color:var(--bad);padding:4px 8px}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px}
+.stat b{display:block;font-size:1.5rem}.stat span{font-size:.8rem;color:var(--mut)}
+table{width:100%;border-collapse:collapse;font-size:.95rem}
+th,td{text-align:left;padding:8px 6px;border-bottom:1px solid var(--bd)}
+th{font-size:.75rem;color:var(--mut);font-weight:600}
+.tag{padding:2px 8px;border-radius:10px;font-size:.78rem;color:#fff;white-space:nowrap}
+.row{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+canvas{width:100%;height:240px}
+.empty{color:var(--mut);text-align:center;padding:20px}
+.tw{overflow-x:auto}
+#report{display:none}
+#report.on{display:block}
+#report .rb{background:#fff;color:#000;border-radius:12px;padding:20px;border:1px solid var(--bd)}
+#report .rb table{color:#000}#report .rb th{color:#555}#report .rb td,#report .rb th{border-color:#ccc}
+#report h2{margin:0 0 4px}
+.noprint{margin-bottom:12px}
+@media print{
+ body{background:#fff}
+ main>*:not(#report){display:none!important}
+ .noprint{display:none!important}
+ #report .rb{border:0;padding:0}
+ .tag{color:#000!important;background:none!important;border:1px solid #999}
+ @page{margin:14mm}
+}
+</style>
+</head>
+<body>
+<main>
+<h1>🩺 Dziennik ciśnienia</h1>
+
+<div class="card">
+<form id="f">
+<label class="big">SYS (górne)<input id="sys" type="number" min="50" max="300" required inputmode="numeric"></label>
+<label class="big">DIA (dolne)<input id="dia" type="number" min="30" max="200" required inputmode="numeric"></label>
+<label class="big">Tętno<input id="pul" type="number" min="30" max="250" inputmode="numeric"></label>
+<label>Data i godzina<input id="dt" type="datetime-local" required></label>
+<label>Ramię<select id="arm"><option>lewe</option><option>prawe</option></select></label>
+<label>Notatka<input id="note" type="text" placeholder="np. po kawie, leki"></label>
+<button type="submit">Zapisz pomiar</button>
+</form>
+</div>
+
+<div class="card">
+<div class="stats" id="stats"></div>
+</div>
+
+<div class="card">
+<canvas id="ch" width="800" height="240"></canvas>
+</div>
+
+<div class="card">
+<div class="tw"><table>
+<thead><tr><th>Data</th><th>SYS/DIA</th><th>Tętno</th><th>Ocena</th><th>Ramię</th><th>Notatka</th><th></th></tr></thead>
+<tbody id="tb"></tbody></table></div>
+<div class="row">
+<button class="sec" id="csv">Eksport CSV</button>
+<button class="sec" id="bak">Kopia zapasowa (JSON)</button>
+<button class="sec" id="imp">Wczytaj kopię</button>
+<button id="rep">📄 Generuj raport</button>
+<input type="file" id="file" accept=".json" hidden>
+</div>
+</div>
+<section id="report">
+<div class="card noprint">
+<form id="rf" onsubmit="return false">
+<label>Okres<select id="rper"><option value="7">ostatnie 7 dni</option><option value="14">ostatnie 14 dni</option><option value="30" selected>ostatnie 30 dni</option><option value="90">ostatnie 90 dni</option><option value="0">wszystkie</option></select></label>
+<label>Imię i nazwisko (opcjonalnie)<input id="rname" type="text"></label>
+<label>E-mail odbiorcy<input id="rmail" type="email" placeholder="lekarz@example.com"></label>
+</form>
+<div class="row">
+<button id="rpdf">Zapisz jako PDF / drukuj</button>
+<button class="sec" id="rsend">✉ Wyślij mailem</button>
+<button class="sec" id="rclose">Zamknij raport</button>
+</div>
+<p style="color:var(--mut);font-size:.8rem;margin:10px 0 0">W oknie drukowania wybierz „Zapisz jako PDF”. Poczta nie pozwala dołączyć pliku automatycznie: „Wyślij mailem” otwiera wiadomość z podsumowaniem i tabelą w treści, a PDF możesz dołączyć ręcznie.</p>
+</div>
+<div class="rb" id="rbody"></div>
+</section>
+<p style="color:var(--mut);font-size:.8rem">Dane są zapisane tylko w tej przeglądarce. Robiąc kopię zapasową zabezpieczasz się przed ich utratą. Aplikacja nie zastępuje porady lekarza.</p>
+</main>
+<script>
+const KEY='cisnienie.v1';
+let data=[];
+try{data=JSON.parse(localStorage.getItem(KEY))||[]}catch(e){data=[]}
+const $=id=>document.getElementById(id);
+const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(data))}catch(e){alert('Nie można zapisać danych w przeglądarce!')}};
+const pad=n=>String(n).padStart(2,'0');
+const nowLocal=()=>{const d=new Date();return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`};
+$('dt').value=nowLocal();
+
+// klasyfikacja wg ESH 2018
+function cls(s,d){
+ if(s>=180||d>=110)return['Nadciśn. 3°','#dc2626'];
+ if(s>=160||d>=100)return['Nadciśn. 2°','#ea580c'];
+ if(s>=140||d>=90)return['Nadciśn. 1°','#d97706'];
+ if(s>=130||d>=85)return['Wysokie prawidłowe','#ca8a04'];
+ if(s>=120||d>=80)return['Prawidłowe','#65a30d'];
+ return['Optymalne','#16a34a'];
+}
+const fmt=s=>{const d=new Date(s);return d.toLocaleDateString('pl-PL')+' '+d.toLocaleTimeString('pl-PL',{hour:'2-digit',minute:'2-digit'})};
+const avg=a=>a.length?Math.round(a.reduce((x,y)=>x+y,0)/a.length):'–';
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+$('f').addEventListener('submit',e=>{
+ e.preventDefault();
+ const s=+$('sys').value,d=+$('dia').value;
+ if(d>=s&&!confirm('Dolne ≥ górne. Na pewno zapisać?'))return;
+ data.push({id:Date.now(),dt:$('dt').value,sys:s,dia:d,pul:$('pul').value?+$('pul').value:null,arm:$('arm').value,note:$('note').value.trim()});
+ data.sort((a,b)=>a.dt.localeCompare(b.dt));
+ save();
+ ['sys','dia','pul','note'].forEach(i=>$(i).value='');
+ $('dt').value=nowLocal();
+ render();$('sys').focus();
+});
+
+function render(){
+ const desc=[...data].reverse();
+ $('tb').innerHTML=desc.length?desc.map(r=>{const[c,col]=cls(r.sys,r.dia);
+  return `<tr><td>${fmt(r.dt)}</td><td><b>${r.sys}/${r.dia}</b></td><td>${r.pul??'–'}</td><td><span class="tag" style="background:${col}">${c}</span></td><td>${esc(r.arm)}</td><td>${esc(r.note)}</td><td><button class="del" data-id="${r.id}" title="Usuń">✕</button></td></tr>`}).join('')
+  :'<tr><td colspan="7" class="empty">Brak pomiarów. Dodaj pierwszy powyżej.</td></tr>';
+ const lim=Date.now()-30*864e5;
+ const m=data.filter(r=>new Date(r.dt).getTime()>=lim);
+ const last=data[data.length-1];
+ $('stats').innerHTML=`
+  <div class="stat"><b>${last?last.sys+'/'+last.dia:'–'}</b><span>ostatni pomiar</span></div>
+  <div class="stat"><b>${avg(m.map(r=>r.sys))}/${avg(m.map(r=>r.dia))}</b><span>średnia 30 dni (${m.length} pomiarów)</span></div>
+  <div class="stat"><b>${avg(m.filter(r=>r.pul).map(r=>r.pul))}</b><span>średnie tętno 30 dni</span></div>`;
+ draw();
+}
+
+$('tb').addEventListener('click',e=>{
+ const id=e.target.dataset.id;
+ if(id&&confirm('Usunąć ten pomiar?')){data=data.filter(r=>r.id!=id);save();render()}
+});
+
+function draw(){
+ const c=$('ch'),x=c.getContext('2d'),W=c.width,H=c.height;
+ x.clearRect(0,0,W,H);
+ const st=getComputedStyle(document.body);
+ const tx=st.getPropertyValue('--mut'),bd=st.getPropertyValue('--bd');
+ const pts=data.slice(-30);
+ x.font='12px system-ui';x.fillStyle=tx;
+ if(pts.length<2){x.fillText('Wykres pojawi się po co najmniej 2 pomiarach.',20,H/2);return}
+ const L=36,R=W-10,T=10,B=H-24,lo=40,hi=Math.max(180,...pts.map(p=>p.sys+10));
+ const X=i=>L+(R-L)*i/(pts.length-1),Y=v=>B-(B-T)*(v-lo)/(hi-lo);
+ x.strokeStyle=bd;x.lineWidth=1;
+ for(let v=40;v<=hi;v+=20){x.beginPath();x.moveTo(L,Y(v));x.lineTo(R,Y(v));x.stroke();x.fillText(v,4,Y(v)+4)}
+ x.setLineDash([5,4]);x.strokeStyle='#d97706';
+ [[140],[90]].forEach(([v])=>{x.beginPath();x.moveTo(L,Y(v));x.lineTo(R,Y(v));x.stroke()});
+ x.setLineDash([]);
+ const line=(k,col)=>{x.strokeStyle=col;x.fillStyle=col;x.lineWidth=2;x.beginPath();
+  pts.forEach((p,i)=>i?x.lineTo(X(i),Y(p[k])):x.moveTo(X(i),Y(p[k])));x.stroke();
+  pts.forEach((p,i)=>{x.beginPath();x.arc(X(i),Y(p[k]),3,0,7);x.fill()})};
+ line('sys','#dc2626');line('dia','#2563eb');
+ x.fillStyle=tx;
+ x.fillText('— SYS',L+6,T+12);x.fillText('— DIA',L+56,T+12);
+ x.fillText(new Date(pts[0].dt).toLocaleDateString('pl-PL'),L,H-6);
+ const e=new Date(pts[pts.length-1].dt).toLocaleDateString('pl-PL');x.fillText(e,R-x.measureText(e).width,H-6);
+}
+
+function dl(name,text,type){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([text],{type}));a.download=name;a.click();URL.revokeObjectURL(a.href)}
+$('csv').onclick=()=>{
+ const q=s=>'"'+String(s??'').replace(/"/g,'""').replace(/^([=+\-@])/,"'$1")+'"';
+ const rows=['Data;SYS;DIA;Tetno;Ramie;Notatka',...data.map(r=>[q(r.dt),r.sys,r.dia,r.pul??'',q(r.arm),q(r.note)].join(';'))];
+ dl('cisnienie.csv','﻿'+rows.join('\n'),'text/csv');
+};
+$('bak').onclick=()=>dl('cisnienie-kopia-'+nowLocal().slice(0,10)+'.json',JSON.stringify(data),'application/json');
+$('imp').onclick=()=>$('file').click();
+$('file').onchange=e=>{
+ const f=e.target.files[0];if(!f)return;
+ const r=new FileReader();
+ r.onload=()=>{try{
+  const a=JSON.parse(r.result);
+  if(!Array.isArray(a)||!a.every(o=>typeof o.sys==='number'&&typeof o.dia==='number'&&typeof o.dt==='string'))throw 0;
+  if(!confirm(`Wczytać ${a.length} pomiarów? Zastąpi to obecne dane (${data.length}).`))return;
+  data=a.map(o=>({id:o.id||Date.now()+Math.random(),dt:o.dt,sys:o.sys,dia:o.dia,pul:o.pul??null,arm:String(o.arm||''),note:String(o.note||'')}));
+  data.sort((a,b)=>a.dt.localeCompare(b.dt));save();render();
+ }catch(_){alert('Nieprawidłowy plik kopii.')}};
+ r.readAsText(f);e.target.value='';
+};
+// --- raport ---
+try{$('rname').value=localStorage.getItem(KEY+'.name')||'';$('rmail').value=localStorage.getItem(KEY+'.mail')||''}catch(e){}
+function repData(){
+ const days=+$('rper').value;
+ const from=days?Date.now()-days*864e5:0;
+ return {days,rows:data.filter(r=>new Date(r.dt).getTime()>=from)};
+}
+function buildReport(){
+ const {days,rows}=repData();
+ const sy=rows.map(r=>r.sys),di=rows.map(r=>r.dia),pu=rows.filter(r=>r.pul).map(r=>r.pul);
+ const mx=a=>a.length?Math.max(...a):'–',mn=a=>a.length?Math.min(...a):'–';
+ const hi=rows.filter(r=>r.sys>=140||r.dia>=90).length;
+ const name=$('rname').value.trim();
+ const per=days?`ostatnie ${days} dni`:'wszystkie pomiary';
+ const html=`<h2>Raport ciśnienia tętniczego</h2>
+ <div style="color:#555;margin-bottom:12px">${name?esc(name)+' · ':''}${per} · wygenerowano ${new Date().toLocaleDateString('pl-PL')}</div>
+ <table style="margin-bottom:14px"><tbody>
+ <tr><td>Liczba pomiarów</td><td><b>${rows.length}</b></td></tr>
+ <tr><td>Średnia SYS/DIA</td><td><b>${avg(sy)}/${avg(di)}</b> mmHg</td></tr>
+ <tr><td>Min–max SYS</td><td>${mn(sy)}–${mx(sy)}</td></tr>
+ <tr><td>Min–max DIA</td><td>${mn(di)}–${mx(di)}</td></tr>
+ <tr><td>Średnie tętno</td><td>${avg(pu)}</td></tr>
+ <tr><td>Pomiary ≥140/90</td><td>${hi} z ${rows.length}</td></tr></tbody></table>
+ <table><thead><tr><th>Data</th><th>SYS/DIA</th><th>Tętno</th><th>Ocena</th><th>Ramię</th><th>Notatka</th></tr></thead><tbody>
+ ${rows.map(r=>`<tr><td>${fmt(r.dt)}</td><td><b>${r.sys}/${r.dia}</b></td><td>${r.pul??'–'}</td><td>${cls(r.sys,r.dia)[0]}</td><td>${esc(r.arm)}</td><td>${esc(r.note)}</td></tr>`).join('')||'<tr><td colspan="6">Brak pomiarów w wybranym okresie.</td></tr>'}
+ </tbody></table>
+ <p style="color:#555;font-size:.8rem;margin-top:14px">Klasyfikacja wg ESH 2018. Dokument informacyjny, nie zastępuje porady lekarza.</p>`;
+ $('rbody').innerHTML=html;
+ return {rows,sy,di,pu,per,name};
+}
+$('rep').onclick=()=>{buildReport();$('report').classList.add('on');$('report').scrollIntoView()};
+$('rper').onchange=$('rname').oninput=buildReport;
+$('rclose').onclick=()=>$('report').classList.remove('on');
+$('rpdf').onclick=()=>{buildReport();
+ const old=document.title;document.title='Raport-cisnienie-'+nowLocal().slice(0,10);
+ window.print();document.title=old};
+$('rsend').onclick=()=>{
+ const to=$('rmail').value.trim();
+ if(to&&!$('rmail').checkValidity()){alert('Niepoprawny adres e-mail.');return}
+ try{localStorage.setItem(KEY+'.name',$('rname').value);localStorage.setItem(KEY+'.mail',to)}catch(e){}
+ const {rows,sy,di,pu,per,name}=buildReport();
+ let body=`Raport ciśnienia tętniczego${name?' – '+name:''}\nOkres: ${per}\nLiczba pomiarów: ${rows.length}\nŚrednia: ${avg(sy)}/${avg(di)} mmHg, tętno ${avg(pu)}\n\nData; SYS/DIA; tętno; ocena\n`;
+ const lines=rows.slice().reverse().map(r=>`${fmt(r.dt)}; ${r.sys}/${r.dia}; ${r.pul??'-'}; ${cls(r.sys,r.dia)[0]}${r.note?'; '+r.note:''}`);
+ let used=0;
+ for(const l of lines){if(body.length>1500){body+=`\n… (pominięto ${lines.length-used} starszych pomiarów – pełna lista w załączonym PDF)`;break}body+=l+'\n';used++}
+ location.href=`mailto:${encodeURIComponent(to)}?subject=${encodeURIComponent('Raport ciśnienia'+(name?' – '+name:''))}&body=${encodeURIComponent(body)}`;
+};
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change',draw);
+render();
+if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
+</script>
+</body>
+</html>

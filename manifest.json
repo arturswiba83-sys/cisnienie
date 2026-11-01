@@ -1,0 +1,13 @@
+{
+  "name": "Dziennik ciśnienia",
+  "short_name": "Ciśnienie",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#12151b",
+  "theme_color": "#2563eb",
+  "lang": "pl",
+  "icons": [
+    {"src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable"}
+  ]
+}
