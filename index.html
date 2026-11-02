@@ -85,6 +85,11 @@ canvas{width:100%;height:240px}
 <button id="rep">📄 Generuj raport</button>
 <input type="file" id="file" accept=".json" hidden>
 </div>
+<div class="row" style="margin-top:10px;align-items:center">
+<button id="sync">☁ Synchronizuj z Dyskiem Google</button>
+<span id="syncst" style="color:var(--mut);font-size:.85rem"></span>
+</div>
+<p style="color:var(--mut);font-size:.8rem;margin:6px 0 0">Pomiary trafiają do ukrytego folderu aplikacji na Twoim Dysku Google (widocznego tylko dla tej aplikacji). Włącz na telefonie i komputerze, a dane będą się łączyć same.</p>
 </div>
 <section id="report">
 <div class="card noprint">
@@ -105,6 +110,7 @@ canvas{width:100%;height:240px}
 <p style="color:var(--mut);font-size:.8rem">Dane są zapisane tylko w tej przeglądarce. Robiąc kopię zapasową zabezpieczasz się przed ich utratą. Aplikacja nie zastępuje porady lekarza.</p>
 </main>
 <script src="jspdf.umd.min.js"></script>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 <script>
 const KEY='cisnienie.v1';
 let data=[];
@@ -141,7 +147,7 @@ $('f').addEventListener('submit',e=>{
  if(d>=s&&!confirm('Dolne ≥ górne. Na pewno zapisać?'))return;
  data.push({id:Date.now(),dt:$('dt').value,sys:s,dia:d,pul:$('pul').value?+$('pul').value:null,arm:$('arm').value,note:$('note').value.trim()});
  data.sort((a,b)=>a.dt.localeCompare(b.dt));
- save();
+ save();autoSync();
  ['sys','dia','pul','note'].forEach(i=>$(i).value='');
  dtEdited=false;$('dt').value=nowLocal();
  render();$('sys').focus();
@@ -164,7 +170,7 @@ function render(){
 
 $('tb').addEventListener('click',e=>{
  const id=e.target.dataset.id;
- if(id&&confirm('Usunąć ten pomiar?')){data=data.filter(r=>r.id!=id);save();render()}
+ if(id&&confirm('Usunąć ten pomiar?')){data=data.filter(r=>r.id!=id);del.push(+id);saveDel();save();render();autoSync()}
 });
 
 function draw(){
@@ -307,6 +313,71 @@ $('rsend').onclick=async()=>{
  }catch(e){if(e.name!=='AbortError')alert('Nie udało się utworzyć PDF: '+e.message)}
  finally{btn.disabled=false;btn.textContent=old}
 };
+// --- synchronizacja z Dyskiem Google (folder appDataFolder) ---
+const CID='781415678803-5907ojno4nqn9989mnoal0at0qll0913.apps.googleusercontent.com';
+const SCOPE='https://www.googleapis.com/auth/drive.appdata';
+const FN='cisnienie.json';
+let del=[];
+try{del=JSON.parse(localStorage.getItem(KEY+'.del'))||[]}catch(e){}
+function saveDel(){try{localStorage.setItem(KEY+'.del',JSON.stringify(del))}catch(e){}}
+let tok=null,tokExp=0,tc=null,busy=false,timer=null;
+const setSt=t=>{$('syncst').textContent=t};
+function getToken(interactive){
+ return new Promise((res,rej)=>{
+  if(tok&&Date.now()<tokExp-60000)return res(tok);
+  if(!window.google||!google.accounts)return rej(new Error('brak połączenia z Google'));
+  tc=tc||google.accounts.oauth2.initTokenClient({client_id:CID,scope:SCOPE,callback:()=>{}});
+  tc.callback=r=>{if(r.error)return rej(new Error(r.error));tok=r.access_token;tokExp=Date.now()+(+r.expires_in||3600)*1000;res(tok)};
+  tc.error_callback=e=>rej(new Error(e.type||'przerwano'));
+  tc.requestAccessToken({prompt:interactive?'':'none'});
+ });
+}
+async function drive(path,opt={}){
+ const r=await fetch(path,{...opt,headers:{...(opt.headers||{}),Authorization:'Bearer '+tok}});
+ if(!r.ok)throw new Error('Dysk: '+r.status);
+ return r;
+}
+const okRec=o=>o&&typeof o.sys==='number'&&typeof o.dia==='number'&&typeof o.dt==='string'&&o.id!=null;
+async function sync(interactive){
+ if(busy)return;busy=true;
+ const b=$('sync');b.disabled=true;setSt('Synchronizuję…');
+ try{
+  await getToken(interactive);
+  const q=encodeURIComponent(`name='${FN}'`);
+  const l=await(await drive(`https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q=${q}&fields=files(id)`)).json();
+  const fid=l.files&&l.files[0]&&l.files[0].id;
+  let rd=[],rdel=[];
+  if(fid){
+   const j=await(await drive(`https://www.googleapis.com/drive/v3/files/${fid}?alt=media`)).json();
+   rd=Array.isArray(j.data)?j.data.filter(okRec):[];
+   rdel=Array.isArray(j.del)?j.del.filter(Number.isFinite):[];
+  }
+  del=[...new Set([...del,...rdel])];
+  const gone=new Set(del),m=new Map();
+  [...rd,...data].forEach(o=>{if(okRec(o)&&!gone.has(+o.id))m.set(+o.id,{id:+o.id,dt:o.dt,sys:o.sys,dia:o.dia,pul:o.pul??null,arm:String(o.arm||''),note:String(o.note||'')})});
+  const before=data.length;
+  data=[...m.values()].sort((a,c)=>a.dt.localeCompare(c.dt));
+  saveDel();save();render();
+  const body=JSON.stringify({data,del});
+  if(fid)await drive(`https://www.googleapis.com/upload/drive/v3/files/${fid}?uploadType=media`,{method:'PATCH',headers:{'Content-Type':'application/json'},body});
+  else{
+   const bd='b'+Date.now();
+   await drive('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart',{method:'POST',headers:{'Content-Type':'multipart/related; boundary='+bd},
+    body:`--${bd}\r\nContent-Type: application/json\r\n\r\n${JSON.stringify({name:FN,parents:['appDataFolder']})}\r\n--${bd}\r\nContent-Type: application/json\r\n\r\n${body}\r\n--${bd}--`});
+  }
+  try{localStorage.setItem(KEY+'.sync','1')}catch(e){}
+  setSt(`Zsynchronizowano ${new Date().toLocaleTimeString('pl-PL',{hour:'2-digit',minute:'2-digit'})} (${data.length} pomiarów${data.length>before?', +'+(data.length-before)+' z Dysku':''})`);
+ }catch(e){
+  setSt(interactive?'Błąd synchronizacji: '+e.message:'Kliknij „Synchronizuj”, aby połączyć z Dyskiem.');
+ }finally{b.disabled=false;busy=false}
+}
+function autoSync(){
+ let on=false;try{on=localStorage.getItem(KEY+'.sync')==='1'}catch(e){}
+ if(!on)return;clearTimeout(timer);timer=setTimeout(()=>sync(false),1500);
+}
+$('sync').onclick=()=>sync(true);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)autoSync()});
+addEventListener('load',()=>setTimeout(autoSync,1500));
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change',draw);
 render();
 if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
