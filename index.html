@@ -114,6 +114,13 @@ const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(data))}catch(e){aler
 const pad=n=>String(n).padStart(2,'0');
 const nowLocal=()=>{const d=new Date();return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`};
 $('dt').value=nowLocal();
+let dtEdited=false;
+$('dt').addEventListener('input',()=>{dtEdited=true});
+const refreshDt=()=>{if(!dtEdited)$('dt').value=nowLocal()};
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)refreshDt()});
+addEventListener('focus',refreshDt);
+addEventListener('pageshow',refreshDt);
+setInterval(refreshDt,30000);
 
 // klasyfikacja wg ESH 2018
 function cls(s,d){
@@ -136,7 +143,7 @@ $('f').addEventListener('submit',e=>{
  data.sort((a,b)=>a.dt.localeCompare(b.dt));
  save();
  ['sys','dia','pul','note'].forEach(i=>$(i).value='');
- $('dt').value=nowLocal();
+ dtEdited=false;$('dt').value=nowLocal();
  render();$('sys').focus();
 });
 
