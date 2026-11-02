@@ -143,6 +143,7 @@ const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'
 
 $('f').addEventListener('submit',e=>{
  e.preventDefault();
+ if(!dtEdited)$('dt').value=nowLocal();
  const s=+$('sys').value,d=+$('dia').value;
  if(d>=s&&!confirm('Dolne ≥ górne. Na pewno zapisać?'))return;
  data.push({id:Date.now(),dt:$('dt').value,sys:s,dia:d,pul:$('pul').value?+$('pul').value:null,arm:$('arm').value,note:$('note').value.trim()});
