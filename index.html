@@ -157,7 +157,7 @@ function render(){
  const last=data[data.length-1];
  $('stats').innerHTML=`
   <div class="stat"><b>${last?last.sys+'/'+last.dia:'–'}</b><span>ostatni pomiar</span></div>
-  <div class="stat"><b>${avg(m.map(r=>r.sys))}/${avg(m.map(r=>r.dia))}</b><span>średnia 30 dni (${m.length} pomiarów)</span></div>
+  <div class="stat"><b>${m.length}</b><span>pomiarów w ostatnich 30 dniach</span></div>
   <div class="stat"><b>${avg(m.filter(r=>r.pul).map(r=>r.pul))}</b><span>średnie tętno 30 dni</span></div>`;
  draw();
 }
@@ -231,7 +231,6 @@ function buildReport(){
  <div style="color:#555;margin-bottom:12px">${name?esc(name)+' · ':''}${per} · wygenerowano ${new Date().toLocaleDateString('pl-PL')}</div>
  <table style="margin-bottom:14px"><tbody>
  <tr><td>Liczba pomiarów</td><td><b>${rows.length}</b></td></tr>
- <tr><td>Średnia SYS/DIA</td><td><b>${avg(sy)}/${avg(di)}</b> mmHg</td></tr>
  <tr><td>Min–max SYS</td><td>${mn(sy)}–${mx(sy)}</td></tr>
  <tr><td>Min–max DIA</td><td>${mn(di)}–${mx(di)}</td></tr>
  <tr><td>Średnie tętno</td><td>${avg(pu)}</td></tr>
@@ -265,7 +264,7 @@ async function makePdf(){
  f(24);x.fillStyle='#444';x.fillText(`${name?name+' · ':''}${per} · wygenerowano ${new Date().toLocaleDateString('pl-PL')}`,M,y);x.fillStyle='#000';y+=60;
  const mx=a=>a.length?Math.max(...a):'–',mn=a=>a.length?Math.min(...a):'–';
  const hi=rows.filter(r=>r.sys>=140||r.dia>=90).length;
- [['Liczba pomiarów',rows.length],['Średnia SYS/DIA',`${avg(sy)}/${avg(di)} mmHg`],['Min–max SYS',`${mn(sy)}–${mx(sy)}`],['Min–max DIA',`${mn(di)}–${mx(di)}`],['Średnie tętno',avg(pu)],['Pomiary ≥140/90',`${hi} z ${rows.length}`]].forEach(([k,v])=>{f(28);x.fillText(k,M,y);f(28,1);x.fillText(String(v),M+420,y);y+=44});
+ [['Liczba pomiarów',rows.length],['Min–max SYS',`${mn(sy)}–${mx(sy)}`],['Min–max DIA',`${mn(di)}–${mx(di)}`],['Średnie tętno',avg(pu)],['Pomiary ≥140/90',`${hi} z ${rows.length}`]].forEach(([k,v])=>{f(28);x.fillText(k,M,y);f(28,1);x.fillText(String(v),M+420,y);y+=44});
  y+=30;hdr();
  for(const r of rows.slice().reverse()){
   f(24);
@@ -297,7 +296,7 @@ $('rsend').onclick=async()=>{
   const fn='raport-cisnienie-'+nowLocal().slice(0,10)+'.pdf';
   const file=new File([r.blob],fn,{type:'application/pdf'});
   const subj='Raport ciśnienia'+(r.name?' – '+r.name:'');
-  const text=`${subj}\nOkres: ${r.per}, pomiarów: ${r.rows.length}, średnia ${avg(r.sy)}/${avg(r.di)} mmHg.\nRaport w załączniku.`;
+  const text=`${subj}\nOkres: ${r.per}, pomiarów: ${r.rows.length}.\nRaport w załączniku.`;
   if(navigator.canShare&&navigator.canShare({files:[file]})){
    await navigator.share({files:[file],title:subj,text});
   }else{
