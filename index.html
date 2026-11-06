@@ -63,6 +63,7 @@ canvas{width:100%;height:240px}
 <label>Ramię<select id="arm"><option>lewe</option><option>prawe</option></select></label>
 <label>Notatka<input id="note" type="text" placeholder="np. po kawie, leki"></label>
 <button type="submit">Zapisz pomiar</button>
+<button type="button" class="sec" id="ecancel" hidden>Anuluj edycję</button>
 </form>
 </div>
 
@@ -146,18 +147,38 @@ $('f').addEventListener('submit',e=>{
  if(!dtEdited)$('dt').value=nowLocal();
  const s=+$('sys').value,d=+$('dia').value;
  if(d>=s&&!confirm('Dolne ≥ górne. Na pewno zapisać?'))return;
- data.push({id:Date.now(),dt:$('dt').value,sys:s,dia:d,pul:$('pul').value?+$('pul').value:null,arm:$('arm').value,note:$('note').value.trim()});
+ const rec={dt:$('dt').value,sys:s,dia:d,pul:$('pul').value?+$('pul').value:null,arm:$('arm').value,note:$('note').value.trim()};
+ if(editId!==null){const r=data.find(x=>x.id==editId);if(r)Object.assign(r,rec);else data.push({id:editId,...rec})}
+ else data.push({id:Date.now(),...rec});
  data.sort((a,b)=>a.dt.localeCompare(b.dt));
  save();autoSync();
- ['sys','dia','pul','note'].forEach(i=>$(i).value='');
- dtEdited=false;$('dt').value=nowLocal();
+ endEdit();
  render();$('sys').focus();
 });
+
+let editId=null;
+function endEdit(){
+ editId=null;
+ ['sys','dia','pul','note'].forEach(i=>$(i).value='');
+ dtEdited=false;$('dt').value=nowLocal();
+ $('f').querySelector('button[type=submit]').textContent='Zapisz pomiar';
+ $('ecancel').hidden=true;
+}
+function startEdit(id){
+ const r=data.find(x=>x.id==id);if(!r)return;
+ editId=r.id;
+ $('sys').value=r.sys;$('dia').value=r.dia;$('pul').value=r.pul??'';
+ $('dt').value=r.dt;dtEdited=true;$('arm').value=r.arm;$('note').value=r.note||'';
+ $('f').querySelector('button[type=submit]').textContent='Zapisz zmiany';
+ $('ecancel').hidden=false;
+ $('f').scrollIntoView({behavior:'smooth'});$('sys').focus();
+}
+$('ecancel').addEventListener('click',endEdit);
 
 function render(){
  const desc=[...data].reverse();
  $('tb').innerHTML=desc.length?desc.map(r=>{const[c,col]=cls(r.sys,r.dia);
-  return `<tr><td>${fmt(r.dt)}</td><td><b>${r.sys}/${r.dia}</b></td><td>${r.pul??'–'}</td><td><span class="tag" style="background:${col}">${c}</span></td><td>${esc(r.arm)}</td><td>${esc(r.note)}</td><td><button class="del" data-id="${r.id}" title="Usuń">✕</button></td></tr>`}).join('')
+  return `<tr><td>${fmt(r.dt)}</td><td><b>${r.sys}/${r.dia}</b></td><td>${r.pul??'–'}</td><td><span class="tag" style="background:${col}">${c}</span></td><td>${esc(r.arm)}</td><td>${esc(r.note)}</td><td style="white-space:nowrap"><button class="del" style="color:var(--mut)" data-edit="${r.id}" title="Edytuj">✎</button><button class="del" data-id="${r.id}" title="Usuń">✕</button></td></tr>`}).join('')
   :'<tr><td colspan="7" class="empty">Brak pomiarów. Dodaj pierwszy powyżej.</td></tr>';
  const lim=Date.now()-30*864e5;
  const m=data.filter(r=>new Date(r.dt).getTime()>=lim);
@@ -170,6 +191,8 @@ function render(){
 }
 
 $('tb').addEventListener('click',e=>{
+ const eid=e.target.dataset.edit;
+ if(eid){startEdit(eid);return}
  const id=e.target.dataset.id;
  if(id&&confirm('Usunąć ten pomiar?')){data=data.filter(r=>r.id!=id);del.push(+id);saveDel();save();render();autoSync()}
 });
